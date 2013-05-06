@@ -1,5 +1,7 @@
 import json
+import linecache
 import os
+import ast
 from traceback import extract_tb
 from geventwebsocket import WebSocketError
 import sys
@@ -28,6 +30,7 @@ class ErrorHandler(object):
   def format_trace(self, traceback):
     formatted = []
     for filename, line_number, function_name, code in extract_tb(traceback):
+      import pdb;pdb.set_trace()
       if filename in self.filename_mapping:
         formatted.append(dict(filename=self.filename_mapping[filename],
                               line=line_number, function=function_name,
@@ -42,6 +45,58 @@ class ErrorHandler(object):
                            traceback=self.format_trace(traceback))
     )
 
+class MultilineErrorHandler(ErrorHandler):
+
+  def format_trace(self, traceback):
+    formatted = []
+    for filename, line_number, function_name, code in self.extract_multiline_tb(traceback):
+      if filename in self.filename_mapping:
+        formatted.append(dict(filename=self.filename_mapping[filename],
+                              line=line_number, function=function_name,
+                              code=code))
+    return formatted
+
+  def extract_multiline_tb(self, tb, limit=None):
+      if limit is None:
+          if hasattr(sys, 'tracebacklimit'):
+              limit = sys.tracebacklimit
+      tb_list = []
+      n = 0
+      while tb is not None and (limit is None or n < limit):
+          f = tb.tb_frame
+          lineno = tb.tb_lineno
+          co = f.f_code
+          filename = co.co_filename
+          name = co.co_name
+          current_line = linecache.getline(filename, lineno)
+          lineno -= 1
+          prev_line = linecache.getline(filename, lineno)
+          done = False
+          if is_multine(current_line, prev_line):
+            #Multiline?
+            statement = prev_line + current_line
+            while not done:
+              try:
+                import pdb; pdb.set_trace()
+                ast.parse(statement.strip())
+              except Exception:
+                #Parse previous line
+                lineno -= 1
+                statement = linecache.getline(filename, lineno) + statement
+              else:
+                done = True
+            current_line = statement
+          else:
+            if current_line: current_line = current_line.strip()
+            else: current_line = None
+          tb_list.insert(0, (filename, lineno, name, current_line))
+          tb = tb.tb_next
+          n = n+1
+      return tb_list
+
+  def is_multiline(self, current, prev):
+    return prev_line.strip().endswith('\\') or\
+          current_line.strip()[-1] in (')', ']', '}') and not prev_line.strip().endswith('\\')
 
 class JsonRpcServer(object):
   last_resort_response = {'success': False, 'error': {'type': 'internal'}}
@@ -146,13 +201,13 @@ def main(run_server, module_names):
   global handler
   services, filenames = setup_modules(module_names)
   encoder = RegistryJsonEncoder(sort_keys=True, indent=2)
-  error_handler = ErrorHandler(os.path.dirname(__file__) + '/', filenames)
+  error_handler = MultilineErrorHandler(os.path.dirname(__file__) + '/', filenames)
   decoder = json.JSONDecoder()
   rpc_server = JsonRpcServer(services, encoder, decoder, error_handler)
   web_server = WebServer(rpc_server)
   handler = web_server.handler
   if run_server:
-    server = pywsgi.WSGIServer(("", 8000), handler,
+    server = pywsgi.WSGIServer(("", 8100), handler,
                                handler_class=WebSocketHandler)
     server.serve_forever()
 

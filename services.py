@@ -32,7 +32,9 @@ class DB(object):
     sql = ("select sql from sqlite_master where type='table' and name = '{}'"
            .format(table))
     cursor = self.query(sql)
-    return cursor.fetchall()[0][0]
+    return \
+    cursor.\
+    fetchall()[0][2]
 
   def get_all_rows(self, table):
     return self.query('select * from {}'.format(table))
