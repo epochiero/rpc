@@ -68,35 +68,40 @@ class MultilineErrorHandler(ErrorHandler):
           co = f.f_code
           filename = co.co_filename
           name = co.co_name
-          current_line = linecache.getline(filename, lineno)
-          lineno -= 1
-          prev_line = linecache.getline(filename, lineno)
-          done = False
-          if is_multine(current_line, prev_line):
-            #Multiline?
-            statement = prev_line + current_line
-            while not done:
-              try:
-                import pdb; pdb.set_trace()
-                ast.parse(statement.strip())
-              except Exception:
-                #Parse previous line
-                lineno -= 1
-                statement = linecache.getline(filename, lineno) + statement
-              else:
-                done = True
-            current_line = statement
-          else:
-            if current_line: current_line = current_line.strip()
-            else: current_line = None
-          tb_list.insert(0, (filename, lineno, name, current_line))
+          statement = linecache.getline(filename, lineno)
+          orig_lineno, full_stm = self.parse_statement(statement, filename, lineno)
+          tb_list.insert(0, (filename, orig_lineno, name, full_stm))
           tb = tb.tb_next
           n = n+1
       return tb_list
 
-  def is_multiline(self, current, prev):
-    return prev_line.strip().endswith('\\') or\
-          current_line.strip()[-1] in (')', ']', '}') and not prev_line.strip().endswith('\\')
+  #Recursively parse lines until we get a parseable statement
+  def parse_statement(self, statement, filename, lineno):
+    #import pdb;pdb.set_trace()
+    try:
+      curr_statement = statement.strip()
+      ast.parse(curr_statement)
+    except Exception:
+      lineno -= 1
+      prev_line = linecache.getline(filename, lineno)
+      try:
+        curr_statement = (prev_line + statement).strip()
+        ast.parse(curr_statement)
+      except Exception:
+        lineno += 2
+        next_line = linecache.getline(filename, lineno)
+        try:
+          curr_statement = (statement + next_line).strip()
+          ast.parse(curr_statement)
+        except Exception:
+          try:
+            curr_statement = (prev_line + statement + next_line).strip()
+            lineno -= 2
+            ast.parse(curr_statement)
+          except Exception:
+            self.parse_statement(curr_statement, filename, lineno)
+    return lineno, curr_statement
+
 
 class JsonRpcServer(object):
   last_resort_response = {'success': False, 'error': {'type': 'internal'}}
