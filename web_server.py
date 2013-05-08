@@ -30,7 +30,6 @@ class ErrorHandler(object):
   def format_trace(self, traceback):
     formatted = []
     for filename, line_number, function_name, code in extract_tb(traceback):
-      import pdb;pdb.set_trace()
       if filename in self.filename_mapping:
         formatted.append(dict(filename=self.filename_mapping[filename],
                               line=line_number, function=function_name,
@@ -49,14 +48,14 @@ class MultilineErrorHandler(ErrorHandler):
 
   def format_trace(self, traceback):
     formatted = []
-    for filename, line_number, function_name, code in self.extract_multiline_tb(traceback):
+    for filename, line_number, function_name, code in self.extract_tb(traceback):
       if filename in self.filename_mapping:
         formatted.append(dict(filename=self.filename_mapping[filename],
                               line=line_number, function=function_name,
                               code=code))
     return formatted
 
-  def extract_multiline_tb(self, tb, limit=None):
+  def extract_tb(self, tb, limit=None):
       if limit is None:
           if hasattr(sys, 'tracebacklimit'):
               limit = sys.tracebacklimit
@@ -77,7 +76,6 @@ class MultilineErrorHandler(ErrorHandler):
 
   #Recursively parse lines until we get a parseable statement
   def parse_statement(self, statement, filename, lineno):
-    #import pdb;pdb.set_trace()
     try:
       curr_statement = statement.strip()
       ast.parse(curr_statement)
