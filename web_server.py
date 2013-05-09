@@ -67,39 +67,35 @@ class MultilineErrorHandler(ErrorHandler):
           co = f.f_code
           filename = co.co_filename
           name = co.co_name
-          statement = linecache.getline(filename, lineno)
-          orig_lineno, full_stm = self.parse_statement(statement, filename, lineno)
+          orig_lineno, full_stm = self.get_full_statement(filename, lineno)
           tb_list.insert(0, (filename, orig_lineno, name, full_stm))
           tb = tb.tb_next
           n = n+1
       return tb_list
 
-  #Recursively parse lines until we get a parseable statement
-  def parse_statement(self, statement, filename, lineno):
-    try:
-      curr_statement = statement.strip()
-      ast.parse(curr_statement)
-    except Exception:
-      lineno -= 1
-      prev_line = linecache.getline(filename, lineno)
-      try:
-        curr_statement = (prev_line + statement).strip()
-        ast.parse(curr_statement)
-      except Exception:
-        lineno += 2
-        next_line = linecache.getline(filename, lineno)
-        try:
-          curr_statement = (statement + next_line).strip()
-          ast.parse(curr_statement)
-        except Exception:
-          try:
-            curr_statement = (prev_line + statement + next_line).strip()
-            lineno -= 2
-            ast.parse(curr_statement)
-          except Exception:
-            self.parse_statement(curr_statement, filename, lineno)
-    return lineno, curr_statement
 
+  def get_full_statement(self, filename, lineno):
+    for lines in self.linegen(lineno):
+        done = False
+        statement = ''
+        for line in lines:
+            statement += linecache.getline(filename, line)
+        statement = statement.strip()
+        try:
+            ast.parse(statement)
+            done = True
+        except Exception:
+            pass
+        if done:
+            return lines[0], statement
+
+  def linegen(self, lineno, limit=100):
+      for n in range(limit):
+          for offset in range(1, n+1):
+              #Ensure line offsets are valid
+              start = max(lineno-n+offset, 1)
+              end = lineno+offset
+              yield range(start, end)
 
 class JsonRpcServer(object):
   last_resort_response = {'success': False, 'error': {'type': 'internal'}}
@@ -210,7 +206,7 @@ def main(run_server, module_names):
   web_server = WebServer(rpc_server)
   handler = web_server.handler
   if run_server:
-    server = pywsgi.WSGIServer(("", 8100), handler,
+    server = pywsgi.WSGIServer(("", 8000), handler,
                                handler_class=WebSocketHandler)
     server.serve_forever()
 
